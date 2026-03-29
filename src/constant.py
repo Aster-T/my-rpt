@@ -1,8 +1,12 @@
 import argparse
 from enum import Enum
 
+SENTENCE_EMBEDDING_MODEL_NAME_DEFAULT = (
+    "flax-sentence-embeddings/all_datasets_v3_mpnet-base"
+)
+
 embedding_model_to_dimension_and_pooling = {
-    "flax-sentence-embeddings/all_datasets_v3_mpnet-base": (768, "mean"),
+    SENTENCE_EMBEDDING_MODEL_NAME_DEFAULT: (768, "mean"),
 }
 
 QUANTILE_DIMENSION_DEFAULT = 64
