@@ -7,8 +7,12 @@ from typing import Dict, Literal
 from keras import ops
 from keras.layers import Dense, Dropout, Embedding, Layer, LayerNormalization
 
-from configs import RobertaConfig
-from data.tokenizer import Tokenizer
+try:
+    from src.configs import RobertaConfig
+    from src.data.tokenizer import Tokenizer
+except ImportError:
+    from configs import RobertaConfig
+    from data.tokenizer import Tokenizer
 
 
 class DateEmbeddings(Layer):
