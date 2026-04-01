@@ -1,8 +1,9 @@
 from typing import Literal
 
-from keras.layers import Dense, Layer
+from keras.layers import Dense, Dropout, Embedding, Layer, LayerNormalization
 
 from configs import RobertaConfig
+from data.tokenizer import Tokenizer
 
 
 class DateEmbeddings(Layer):
@@ -32,3 +33,40 @@ class CellEmbeddings(Layer):
     ):
         super().__init__()
         self.hidden_size = config.hidden_dim
+
+        # Regression
+        if regression_type == "l2":
+            self.number_embeddings = Dense(config.hidden_dim, name="number_embeddings")
+            self.target_embedding_layer_reg = Dense(
+                config.hidden_dim, name="target_embedding_layer_reg"
+            )
+        else:
+            self.number_embeddings = Dense(
+                Tokenizer.QUANTILE_DIMENSION, name="number_embeddings_as_classification"
+            )
+            self.target_embedding_layer_reg = Embedding(
+                Tokenizer.QUANTILE_DIMENSION,
+                config.hidden_dim,
+                name="target_embedding_layer_reg_as_classification",
+            )
+
+        self.regression_type = regression_type
+        self.is_target_content_mapping = is_target_content_mapping
+
+        # Classification
+        self.target_embedding_layer_classif = Embedding(
+            Tokenizer.QUANTILE_DIMENSION,
+            config.hidden_dim,
+            name="target_embedding_layer_classif",
+        )
+
+        self.date_embeddings = DateEmbeddings(config.hidden_dim)
+        self.column_remapping = Dense(config.hidden_dim, name="column_remapping")
+        self.content_remapping = Dense(config.hidden_dim, name="content_remapping")
+        if self.is_target_content_mapping:
+            self.target_content_remapping = Dense(
+                config.hidden_dim, name="target_content_remapping"
+            )
+
+        self.layer_norm = LayerNormalization(epsilon=config.layer_norm_eps)
+        self.dropout = Dropout(config.dropout)
