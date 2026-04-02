@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import re
-import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal, Optional, Union
@@ -42,9 +41,7 @@ def _to_numpy(x):
 
 def _binary_cross_entropy(probs, targets):
     probs = ops.clip(probs, x_min=1e-7, x_max=1.0 - 1e-7)
-    return -(
-        targets * ops.log(probs) + (1.0 - targets) * ops.log(1.0 - probs)
-    )
+    return -(targets * ops.log(probs) + (1.0 - targets) * ops.log(1.0 - probs))
 
 
 def _binary_cross_entropy_with_logits(logits, targets):
@@ -82,9 +79,7 @@ class RPT(Layer):
         max_number_of_labels = Tokenizer.QUANTILE_DIMENSION
 
         if self.classification_type in ["clustering", "clustering-cosine"]:
-            self.cluster_dense = Dense(
-                self.config.hidden_dim, name="cluster_dense"
-            )
+            self.cluster_dense = Dense(self.config.hidden_dim, name="cluster_dense")
             self.cluster_out_dim = self.config.hidden_dim
             self.cluster_output_head = Dense(
                 self.cluster_out_dim, name="cluster_output_head"
@@ -231,7 +226,9 @@ class RPT(Layer):
         is_cosine_similarity=False,
     ):
         adjacency_matrices = ops.cast(
-            ops.equal(ops.expand_dims(labels, axis=-1), ops.expand_dims(labels, axis=-2)),
+            ops.equal(
+                ops.expand_dims(labels, axis=-1), ops.expand_dims(labels, axis=-2)
+            ),
             dtype=logits.dtype,
         )
 
@@ -279,9 +276,7 @@ class RPT(Layer):
         )
         metric_cluster = (
             ops.sum(
-                ops.cast(
-                    ops.equal(metric_cluster, adjacency_int), dtype=logits.dtype
-                )
+                ops.cast(ops.equal(metric_cluster, adjacency_int), dtype=logits.dtype)
                 * metric_mask_f
             )
             / metric_denominator
@@ -436,7 +431,9 @@ class RPT(Layer):
         return dict(state_dict)
 
     @staticmethod
-    def _normalize_state_dict_keys(state_dict: Mapping[str, object]) -> dict[str, object]:
+    def _normalize_state_dict_keys(
+        state_dict: Mapping[str, object],
+    ) -> dict[str, object]:
         normalized_state_dict: dict[str, object] = {}
 
         for key, value in state_dict.items():
@@ -486,7 +483,9 @@ class RPT(Layer):
             model_size = cls._infer_model_size_from_state_dict(state_dict)
 
         regression_type = "l2"
-        inferred_regression_type = cls._infer_regression_type_from_state_dict(state_dict)
+        inferred_regression_type = cls._infer_regression_type_from_state_dict(
+            state_dict
+        )
         if isinstance(hyper_parameters, Mapping):
             hyper_regression_type = hyper_parameters.get("regression_type")
             if hyper_regression_type in {"l2", "reg-as-classif"}:
@@ -520,7 +519,9 @@ class RPT(Layer):
         }
 
     @staticmethod
-    def _infer_model_size_from_state_dict(state_dict: Mapping[str, object]) -> ModelSize:
+    def _infer_model_size_from_state_dict(
+        state_dict: Mapping[str, object],
+    ) -> ModelSize:
         layer_numbers = []
         for key in state_dict:
             match = re.search(r"in_context_encoder\.(\d+)", key)
@@ -603,7 +604,9 @@ class RPT(Layer):
             f"Unsupported checkpoint format for Keras RPT: {checkpoint_path}"
         )
 
-    def extract_prediction_classification(self, logits, targets, label_classes: np.ndarray):
+    def extract_prediction_classification(
+        self, logits, targets, label_classes: np.ndarray
+    ):
         logits = _to_numpy(logits)
         targets = _to_numpy(targets)
         test_mask = targets <= -99
@@ -646,7 +649,9 @@ class RPT(Layer):
             test_logits = logits[test_mask]
             if test_logits.ndim > 1 and test_logits.shape[-1] == 1:
                 test_logits = np.squeeze(test_logits, axis=-1)
-            test_preds = np.asarray(test_logits * target_std + target_mean, dtype=np.float32)
+            test_preds = np.asarray(
+                test_logits * target_std + target_mean, dtype=np.float32
+            )
             test_probas = None
         return test_preds, test_probas
 
@@ -693,7 +698,14 @@ class RPT(Layer):
         )
         return test_preds, test_logits
 
-    def call(self, data: dict[str, object], is_regression: bool, labels=None, training=None, **kwargs):
+    def call(
+        self,
+        data: dict[str, object],
+        is_regression: bool,
+        labels=None,
+        training=None,
+        **kwargs,
+    ):
         del kwargs
         input_embeds = self.embeddings(data, is_regression, training=training)
         attention_mask = self.build_context_attention_mask(data)
