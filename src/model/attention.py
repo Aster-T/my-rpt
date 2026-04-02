@@ -1,6 +1,5 @@
 from keras import ops
 from keras.layers import Dense, Dropout, Layer
-from keras_hub.models import RobertaBackbone
 
 from .RobertaModule import RobertaIntermediate, RobertaOutput, RobertaSelfOutput
 
@@ -8,11 +7,31 @@ from .RobertaModule import RobertaIntermediate, RobertaOutput, RobertaSelfOutput
 class TwoDimensionAttentionLayer(Layer):
     def __init__(self, config):
         super().__init__()
-        layer_class = RobertaBackbone
-        self.cross_column_layer = layer_class(**config.to_kwargs(layer_class))
-        self.cross_row_layer = layer_class(**config.to_kwargs(layer_class))
+        self.cross_column_layer = KerasRobertaLayer(config)
+        self.cross_row_layer = KerasRobertaLayer(config)
 
-    def call(self, hidden_states, attention_mask=None):
+    @staticmethod
+    def _build_column_attention_mask(column_mask):
+        if column_mask is None:
+            return None
+        column_mask = ops.cast(column_mask, dtype="bool")
+        column_attention_mask = ops.logical_and(
+            ops.expand_dims(column_mask, axis=0),
+            ops.expand_dims(column_mask, axis=1),
+        )
+        column_attention_mask = ops.expand_dims(column_attention_mask, axis=0)
+        column_attention_mask = ops.expand_dims(column_attention_mask, axis=0)
+        return column_attention_mask
+
+    @staticmethod
+    def _apply_column_mask(hidden_states, column_mask):
+        if column_mask is None:
+            return hidden_states
+        column_mask = ops.cast(column_mask, dtype=hidden_states.dtype)
+        column_mask = ops.reshape(column_mask, (1, -1, 1))
+        return hidden_states * column_mask
+
+    def call(self, hidden_states, attention_mask=None, column_mask=None):
         """
         hidden_states: shape (num_rows, num_columns, hidden_size)
         attention_mask: shape (num_rows, num_rows) and values True (attend) or False (do not attend).
@@ -23,19 +42,25 @@ class TwoDimensionAttentionLayer(Layer):
         Returns: tensor of shape (num_rows, num_columns, hidden_size)
         """
 
-        num_rows, num_columns, _ = ops.shape(hidden_states)
+        hidden_states = self._apply_column_mask(hidden_states, column_mask)
+
+        shape = ops.shape(hidden_states)
+        num_rows = shape[0]
+        num_columns = shape[1]
 
         max_row_per_batch = 8192
         col_fraction = 100.0 / float(num_columns)
         batch_step = int(max_row_per_batch * col_fraction)
+        column_attention_mask = self._build_column_attention_mask(column_mask)
 
-        # horizontal attention (full attention along columns)
+        # horizontal attention, excluding padded columns
         horizontal_outputs = []
         for i in range(0, num_rows, batch_step):
             chunk = hidden_states[i : i + batch_step, :, :]
-            chunk_output = self.cross_column_layer(chunk)
+            chunk_output = self.cross_column_layer(chunk, column_attention_mask)
             horizontal_outputs.append(chunk_output)
         horizontal_output = ops.concatenate(horizontal_outputs, axis=0)
+        horizontal_output = self._apply_column_mask(horizontal_output, column_mask)
 
         batch_step = 100
         # attention_mask (num_rows, num_rows) -> (1, 1, num_rows, num_rows)
@@ -51,7 +76,8 @@ class TwoDimensionAttentionLayer(Layer):
             vertical_outputs.append(chunk_output)
         vertical_output = ops.concatenate(vertical_outputs, axis=0)
 
-        return ops.transpose(vertical_output, axes=(1, 0, 2))
+        vertical_output = ops.transpose(vertical_output, axes=(1, 0, 2))
+        return self._apply_column_mask(vertical_output, column_mask)
 
 
 class KerasRobertaLayer(Layer):
@@ -60,12 +86,12 @@ class KerasRobertaLayer(Layer):
         self.seq_len_dim = 1
         self.attention = KerasAttention(config)
         self.intermediate = RobertaIntermediate(config)
-        self.output = RobertaOutput(config)
+        self.output_layer = RobertaOutput(config)
 
     def call(self, hidden_states, attention_mask=None):
         attention_output = self.attention(hidden_states, attention_mask)
         intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
+        layer_output = self.output_layer(intermediate_output, attention_output)
         return layer_output
 
 
@@ -73,11 +99,11 @@ class KerasAttention(Layer):
     def __init__(self, config):
         super().__init__()
         self.self_attention = KerasSelfAttention(config)
-        self.output = RobertaSelfOutput(config)
+        self.output_layer = RobertaSelfOutput(config)
 
     def call(self, hidden_states, attention_mask=None):
         self_outputs = self.self_attention(hidden_states, attention_mask)
-        return self.output(self_outputs, hidden_states)
+        return self.output_layer(self_outputs, hidden_states)
 
 
 class KerasSelfAttention(Layer):
@@ -105,11 +131,13 @@ class KerasSelfAttention(Layer):
         self.dropout = Dropout(config.dropout)
 
     def transpose_for_scores(self, x):
-        batch_size, seq_len = ops.shape(x)
-        x = ops.reshape(
-            x, (batch_size, seq_len, self.num_attention_heads, self.attention_head_size)
+        shape = ops.shape(x)
+        batch_size = shape[0]
+        seq_len = shape[1]
+        return ops.reshape(
+            x,
+            (batch_size, seq_len, self.num_attention_heads, self.attention_head_size),
         )
-        return ops.transpose(x, axes=(0, 2, 1, 3))
 
     def call(self, hidden_states, attention_mask=None):
         """
@@ -130,8 +158,10 @@ class KerasSelfAttention(Layer):
         )
         attn_output = self.dropout(attn_output)
 
-        context_layer = ops.transpose(attn_output, axes=(0, 2, 1, 3))
-        batch_size, seq_len, _ = ops.shape(context_layer)
+        context_layer = attn_output
+        shape = ops.shape(context_layer)
+        batch_size = shape[0]
+        seq_len = shape[1]
         context_layer = ops.reshape(
             context_layer, (batch_size, seq_len, self.config.hidden_dim)
         )

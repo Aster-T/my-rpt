@@ -109,6 +109,13 @@ class CellEmbeddings(Layer):
             axis=1,
         )
 
+    def _get_column_mask(self, input_dict, dtype):
+        column_mask = input_dict.get("column_mask")
+        if column_mask is None:
+            return None
+        column_mask = ops.cast(column_mask, dtype=dtype)
+        return ops.reshape(column_mask, (1, -1, 1))
+
     def call(self, input_dict: Dict, is_regression: bool, training=None):
         is_classification = not is_regression
 
@@ -216,6 +223,11 @@ class CellEmbeddings(Layer):
         input_embeds = input_embeds + self._pad_last_column(
             number_embeds, target_embeds
         )
+        column_mask = self._get_column_mask(input_dict, input_embeds.dtype)
+        if column_mask is not None:
+            input_embeds = input_embeds * column_mask
         input_embeds = self.layer_norm(input_embeds)
         input_embeds = self.dropout(input_embeds, training=training)
+        if column_mask is not None:
+            input_embeds = input_embeds * column_mask
         return input_embeds

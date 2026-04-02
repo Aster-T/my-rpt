@@ -14,7 +14,8 @@ from typing import Any, Optional
 import jax
 import numpy as np
 from keras import config as keras_config
-from keras import ops, optimizers, saving, utils
+from keras import optimizers, saving, utils
+from keras import ops
 from keras.optimizers.schedules import LearningRateSchedule
 from tqdm.auto import tqdm
 
@@ -197,9 +198,7 @@ def build_stream(
     )
 
 
-def prepare_training_batch(
-    batch: dict[str, Any],
-) -> tuple[dict[str, np.ndarray], np.ndarray, bool]:
+def prepare_training_batch(batch: dict[str, Any]) -> tuple[dict[str, np.ndarray], np.ndarray, bool]:
     is_regression = bool(batch["is_regression"])
     data = {key: np.asarray(value) for key, value in batch["data"].items()}
     labels = np.asarray(batch["labels"])
@@ -239,9 +238,7 @@ def build_optimizer(config: PretrainConfig):
     )
 
 
-def extract_stateless_state(
-    model: RPT, optimizer
-) -> tuple[list[Any], list[Any], list[Any]]:
+def extract_stateless_state(model: RPT, optimizer) -> tuple[list[Any], list[Any], list[Any]]:
     trainable_values = [variable.value for variable in model.trainable_variables]
     non_trainable_values = [
         variable.value for variable in model.non_trainable_variables
@@ -399,7 +396,9 @@ def load_checkpoint(
     saving.load_weights(model, checkpoint_dir / "model.weights.h5")
 
     optimizer_state = np.load(checkpoint_dir / "optimizer.npz", allow_pickle=False)
-    optimizer_values = [optimizer_state[key] for key in sorted(optimizer_state.files)]
+    optimizer_values = [
+        optimizer_state[key] for key in sorted(optimizer_state.files)
+    ]
     if len(optimizer_values) != len(optimizer.variables):
         raise ValueError(
             f"optimizer state length mismatch: checkpoint has {len(optimizer_values)} "
@@ -487,7 +486,9 @@ def run_stage(
         jit_compile=config.jit_compile,
     )
 
-    update_step = current_update_step(optimizer_values, config.accumulate_grad_batches)
+    update_step = current_update_step(
+        optimizer_values, config.accumulate_grad_batches
+    )
     if update_step >= max_steps:
         return model
 
@@ -576,9 +577,7 @@ def run_stage(
                     break
 
         if not yielded_any:
-            raise RuntimeError(
-                f"no batches were yielded from training data root: {data_root}"
-            )
+            raise RuntimeError(f"no batches were yielded from training data root: {data_root}")
 
         epoch += 1
 

@@ -707,12 +707,21 @@ class RPT(Layer):
         **kwargs,
     ):
         del kwargs
-        input_embeds = self.embeddings(data, is_regression, training=training)
+        input_embeds = self.embeddings(
+            data,
+            is_regression=is_regression,
+            training=training,
+        )
         attention_mask = self.build_context_attention_mask(data)
+        column_mask = data.get("column_mask")
 
         encoder_outputs = input_embeds
         for layer in self.in_context_encoder:
-            encoder_outputs = layer(encoder_outputs, attention_mask)
+            encoder_outputs = layer(
+                encoder_outputs,
+                attention_mask=attention_mask,
+                column_mask=column_mask,
+            )
 
         target_column_output = encoder_outputs[:, -1]
         target_delta = data.get("target_delta")

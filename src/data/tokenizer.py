@@ -19,6 +19,8 @@ from src.constant import (
 from src.data.sentence_embedder import SentenceEmbedder
 from src.utils.lru_cache import LRU_Cache
 
+PAD_FEATURE_PREFIX = "__RPT_PAD_FEATURE_"
+
 
 class Tokenizer:
     QUANTILE_DIMENSION = QUANTILE_DIMENSION_DEFAULT
@@ -412,6 +414,14 @@ class Tokenizer:
             # texts_to_array replaces texts_to_tensor throughout
             "column_embeddings": self.texts_to_array(
                 [str(x) for x in X_context.columns] + [str(y_context.columns[0])]
+            ),
+            "column_mask": np.asarray(
+                [
+                    not str(column_name).startswith(PAD_FEATURE_PREFIX)
+                    for column_name in X_context.columns
+                ]
+                + [True],
+                dtype=bool,
             ),
             "text_embeddings": np.zeros(
                 (total_length, num_columns, self.embedding_dim), dtype=np.float16
